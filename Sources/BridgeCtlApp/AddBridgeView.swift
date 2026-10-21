@@ -33,8 +33,8 @@ struct AddBridgeView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Lets programs on a relay host reach a cluster through this Mac's logged-in (e.g. Duo) connection.")
                 .fixedSize(horizontal: false, vertical: true)
-            field("Cluster", "ssh host this Mac logs into, e.g. neuronic", $target)
-            field("Relay", "ssh host the programs run on, e.g. whitney", $relay)
+            field("Cluster", "ssh host this Mac logs into, e.g. cluster", $target)
+            field("Relay", "ssh host the programs run on, e.g. workstation", $relay)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Name on relay").font(.headline)
                 TextField(target.isEmpty ? "same as the cluster" : target, text: $alias)

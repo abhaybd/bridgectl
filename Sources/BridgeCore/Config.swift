@@ -3,11 +3,11 @@ import Foundation
 /// One bridge: clients on `relay` run `ssh <alias>` and land on `target`, using this Mac's
 /// already-authenticated (e.g. Duo) ControlMaster connection to `target`.
 public struct Bridge: Codable, Hashable, Identifiable {
-    /// Unique id, used in file names and in the relay's config markers (e.g. "whitney-to-neuronic").
+    /// Unique id, used in file names and in the relay's config markers (e.g. "workstation-to-cluster").
     public var name: String
-    /// ssh host this Mac logs into, with ControlMaster/ControlPath set up (e.g. "neuronic").
+    /// ssh host this Mac logs into, with ControlMaster/ControlPath set up (e.g. "cluster").
     public var target: String
-    /// ssh host where the clients run, reachable from this Mac without prompts (e.g. "whitney").
+    /// ssh host where the clients run, reachable from this Mac without prompts (e.g. "workstation").
     public var relay: String
     /// Host name clients use on the relay (usually the same as `target`).
     public var alias: String

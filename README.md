@@ -3,19 +3,20 @@
 A macOS menu bar app that lets programs on a remote machine reach a cluster they can't reach
 themselves, by hopping through your Mac and reusing its already-logged-in (e.g. Duo) connection.
 
-The motivating case: agents run on `whitney`, experiments run on the Slurm cluster `neuronic`.
-`neuronic` blocks ssh from `whitney` and wants Duo for every new login, but your laptop can log in
-and keeps a ControlMaster connection open. With a bridge set up, `ssh neuronic` (and `rsync`, `scp`,
-`sbatch` over ssh, ...) just works on `whitney`, with no Duo prompts there.
+The motivating case: agents run on a machine called `workstation`, experiments run on a Slurm
+cluster called `cluster`. `cluster` blocks ssh from `workstation` and wants Duo for every new login,
+but your laptop can log in and keeps a ControlMaster connection open. With a bridge set up,
+`ssh cluster` (and `rsync`, `scp`, `sbatch` over ssh, ...) just works on `workstation`, with no Duo
+prompts there.
 
 ```
-whitney                               your Mac                                 neuronic
-ssh neuronic ──► 127.0.0.1:PORT ═══reverse tunnel═══► private sshd ──► relay.sh ──► ControlMaster ──► sshd
-                 (whitney-local)   (opened by the Mac)  (127.0.0.1 only) (forced cmd)  (Duo done once)
+workstation                                          your Mac                                        cluster
+ssh cluster ──► 127.0.0.1:PORT ═══reverse tunnel═══► private sshd ──► relay.sh ──► ControlMaster ──► sshd
+                 (local port)   (opened by the Mac) (127.0.0.1 only) (forced cmd) (Duo done once)
 ```
 
-- **Reverse tunnel.** The Mac keeps `ssh -R` open to the relay (whitney), so the relay can reach the
-  Mac without the Mac accepting any inbound connection from the network.
+- **Reverse tunnel.** The Mac keeps `ssh -R` open to the relay (`workstation`), so the relay can
+  reach the Mac without the Mac accepting any inbound connection from the network.
 - **Private sshd.** The app runs its own sshd as you, listening only on the Mac's `127.0.0.1`, with
   its own host key and `authorized_keys`. macOS Remote Login stays off.
 - **Forced command.** Each relay gets its own key, which can do exactly one thing: run the
@@ -35,16 +36,16 @@ once it's back (after a Duo approval if the login didn't survive).
 ## Requirements
 
 - macOS 13+, Xcode command line tools (`xcode-select --install`) to build.
-- The target (`neuronic`) has a ControlMaster in this Mac's `~/.ssh/config`:
+- The target (`cluster`) has a ControlMaster in this Mac's `~/.ssh/config`:
   ```
-  Host neuronic
-      HostName neuronic.cs.princeton.edu
+  Host cluster
+      HostName cluster.local
       User you
       ControlMaster auto
       ControlPath ~/.ssh/sockets/%r@%h-%p
   ```
-  (`mkdir -p ~/.ssh/sockets`). Your own `ssh neuronic` sessions share the same login.
-- The Mac can ssh into the relay (`whitney`) with a key, no prompts.
+  (`mkdir -p ~/.ssh/sockets`). Your own `ssh cluster` sessions share the same login.
+- The Mac can ssh into the relay (`workstation`) with a key, no prompts.
 
 ## Install
 
@@ -60,7 +61,7 @@ changes.
 
 Click the network icon in the menu bar (it shows a slash when something is down):
 
-- **Add Bridge…**: pick the cluster (e.g. `neuronic`), the relay (`whitney`) and optionally the name
+- **Add Bridge…**: pick the cluster (e.g. `cluster`), the relay (`workstation`) and optionally the name
   to use on the relay (defaults to the cluster's). BridgeCtl generates a key on the relay and adds a
   `Host` entry there.
 - Each bridge's submenu shows the tunnel and login state, and has **Test Connection**,
@@ -70,17 +71,17 @@ Click the network icon in the menu bar (it shows a slash when something is down)
 Or from the terminal:
 
 ```bash
-bridgectl add neuronic --from whitney    # on whitney: ssh neuronic
+bridgectl add cluster --from workstation    # on workstation: ssh cluster
 bridgectl status
-bridgectl test whitney-to-neuronic
-bridgectl login neuronic                 # ask for Duo now
+bridgectl test workstation-to-cluster
+bridgectl login cluster                     # ask for Duo now
 bridgectl reconnect
-bridgectl pause whitney-to-neuronic / resume whitney-to-neuronic
-bridgectl remove whitney-to-neuronic
+bridgectl pause workstation-to-cluster / resume workstation-to-cluster
+bridgectl remove workstation-to-cluster
 ```
 
-On the relay, use the bridge like the real host: `ssh neuronic squeue`,
-`rsync -a data/ neuronic:data/`, `scp`, `ssh -t neuronic` for a shell. In scripts, use `ssh -n`
+On the relay, use the bridge like the real host: `ssh cluster squeue`,
+`rsync -a data/ cluster:data/`, `scp`, `ssh -t cluster` for a shell. In scripts, use `ssh -n`
 when stdin isn't meant for the remote command, as with any ssh.
 
 ## What it changes on a relay
