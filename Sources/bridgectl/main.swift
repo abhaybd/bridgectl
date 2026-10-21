@@ -7,7 +7,7 @@ let usage = """
     usage: bridgectl <command>
 
       status                              show bridges and logins (the default)
-      add <cluster> --via <relay> [--as <name>]
+      add <cluster> --from <relay> [--as <name>]
                                           let `ssh <name>` on <relay> reach <cluster> through this Mac
       remove <bridge>                     remove a bridge (and its setup on the relay)
       pause <bridge> | resume <bridge>    stop / restart a bridge's tunnel, keeping its setup
@@ -42,7 +42,7 @@ func status() {
     let running = AppLock.isHeldElsewhere()
     let snapshot = running ? StatusSnapshot.load() : nil
     print("BridgeCtl app: " + (running ? "running" + (snapshot?.sshdUp == false ? " (local sshd is down!)" : "") : "not running"))
-    if config.bridges.isEmpty { print("No bridges. Add one with: bridgectl add <cluster> --via <relay>"); return }
+    if config.bridges.isEmpty { print("No bridges. Add one with: bridgectl add <cluster> --from <relay>"); return }
     let time = DateFormatter()
     time.timeStyle = .short
     for b in config.bridges {
@@ -122,12 +122,12 @@ do {
         var i = 1
         while i < args.count {
             switch args[i] {
-            case "--via" where i + 1 < args.count: relay = args[i + 1]; i += 2
+            case "--from" where i + 1 < args.count: relay = args[i + 1]; i += 2
             case "--as" where i + 1 < args.count: alias = args[i + 1]; i += 2
             default: fail("unexpected argument '\(args[i])'\n\n\(usage)")
             }
         }
-        guard let relay else { fail("missing --via <relay>\n\n\(usage)") }
+        guard let relay else { fail("missing --from <relay>\n\n\(usage)") }
         print("Setting up \(relay)…")
         let b = try Provisioner.add(target: target, relay: relay, alias: alias)
         Notify.post(Notify.reload)

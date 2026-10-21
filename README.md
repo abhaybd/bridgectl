@@ -70,7 +70,7 @@ Click the network icon in the menu bar (it shows a slash when something is down)
 Or from the terminal:
 
 ```bash
-bridgectl add neuronic --via whitney     # on whitney: ssh neuronic
+bridgectl add neuronic --from whitney    # on whitney: ssh neuronic
 bridgectl status
 bridgectl test neuronic-whitney
 bridgectl login neuronic                 # ask for Duo now

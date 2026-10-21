@@ -18,7 +18,7 @@ struct MenuContent: View {
             Text("No bridges yet")
         }
         ForEach(manager.config.bridges) { bridge in
-            Menu("\(dot(bridge))  \(bridge.target) via \(bridge.relay)") {
+            Menu("\(dot(bridge))  \(bridge.relay) → \(bridge.target)") {
                 Text(tunnelText(bridge))
                 Text(loginText(bridge.target))
                 Text("On \(bridge.relay): ssh \(bridge.alias)")
@@ -89,7 +89,7 @@ struct MenuContent: View {
     }
 
     private func remove(_ b: Bridge) {
-        guard Alerts.confirm("Remove \(b.target) via \(b.relay)?",
+        guard Alerts.confirm("Remove the \(b.relay) → \(b.target) bridge?",
                              "`ssh \(b.alias)` will stop working on \(b.relay). Its key and Host entry there are deleted.",
                              button: "Remove") else { return }
         DispatchQueue.global().async {
