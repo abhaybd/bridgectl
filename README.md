@@ -72,11 +72,11 @@ Or from the terminal:
 ```bash
 bridgectl add neuronic --from whitney    # on whitney: ssh neuronic
 bridgectl status
-bridgectl test neuronic-whitney
+bridgectl test whitney-to-neuronic
 bridgectl login neuronic                 # ask for Duo now
 bridgectl reconnect
-bridgectl pause neuronic-whitney / resume neuronic-whitney
-bridgectl remove neuronic-whitney
+bridgectl pause whitney-to-neuronic / resume whitney-to-neuronic
+bridgectl remove whitney-to-neuronic
 ```
 
 On the relay, use the bridge like the real host: `ssh neuronic squeue`,

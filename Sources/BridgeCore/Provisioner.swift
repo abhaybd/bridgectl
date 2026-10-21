@@ -51,9 +51,9 @@ public enum Provisioner {
             throw BridgeError("Couldn't log into \(relay) without a prompt (it needs key-based login): \(check.message)")
         }
 
-        var name = "\(target)-\(relay)"
+        var name = "\(relay)-to-\(target)"
         var n = 2
-        while config.bridge(named: name) != nil { name = "\(target)-\(relay)-\(n)"; n += 1 }
+        while config.bridge(named: name) != nil { name = "\(relay)-to-\(target)-\(n)"; n += 1 }
 
         try writeLocalFiles(config)  // makes sure the host key exists
         let hostKey = try String(contentsOf: Paths.hostKey.appendingPathExtension("pub"), encoding: .utf8)
@@ -85,6 +85,7 @@ public enum Provisioner {
         config.bridges.removeAll { $0.name == name }
         try config.save()
         try writeLocalFiles(config)
+        try? FileManager.default.removeItem(at: Paths.log("tunnel-\(name)"))
         return r.ok ? nil : """
             Couldn't clean up on \(bridge.relay) (\(r.message)). There, remove the "bridgectl:\(name)" block \
             from ~/.ssh/bridgectl.conf and ~/.ssh/bridgectl_\(name)*.
