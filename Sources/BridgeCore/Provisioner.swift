@@ -92,6 +92,24 @@ public enum Provisioner {
             """
     }
 
+    /// Moves a bridge to a new port on its relay (when the old one is stuck, e.g. still held by a
+    /// dead session there). Clients pick it up right away: ssh re-reads its config every time.
+    public static func movePort(_ name: String) throws -> Int {
+        var config = BridgeConfig.load()
+        guard let i = config.bridges.firstIndex(where: { $0.name == name }) else { throw BridgeError("No bridge named '\(name)'.") }
+        let relay = config.bridges[i].relay
+        for _ in 0..<5 {
+            let port = Int.random(in: 20000...60000)
+            let r = SSH.remote(relay, "sh -s -- \(Shell.quote(name)) \(port)", input: movePortScript, timeout: 40)
+            if r.stdout.contains("PORT_IN_USE") { continue }
+            guard r.ok, r.stdout.contains("MOVED") else { throw BridgeError("Changing the port on \(relay) failed: \(r.message)") }
+            config.bridges[i].remotePort = port
+            try config.save()
+            return port
+        }
+        throw BridgeError("Couldn't find a free port on \(relay).")
+    }
+
     public static func setPaused(_ name: String, _ paused: Bool) throws {
         var config = BridgeConfig.load()
         guard let i = config.bridges.firstIndex(where: { $0.name == name }) else { throw BridgeError("No bridge named '\(name)'.") }
@@ -200,6 +218,20 @@ public enum Provisioner {
           { echo 'Include bridgectl.conf'; echo; cat "$cfg"; } > "$cfg.tmp"; cat "$cfg.tmp" > "$cfg"; rm -f "$cfg.tmp"
         fi
         cat "$key.pub"
+        """#
+
+    /// Runs on the relay: `sh -s -- NAME PORT`. Points the bridge's Host entry at PORT.
+    private static let movePortScript = #"""
+        set -e
+        name="$1" port="$2" conf=~/.ssh/bridgectl.conf
+        if command -v ss >/dev/null 2>&1 && ss -Htln 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]$port\$"; then
+          echo PORT_IN_USE; exit 3
+        fi
+        grep -qx "# >>> bridgectl:$name" "$conf"
+        awk -v b="# >>> bridgectl:$name" -v e="# <<< bridgectl:$name" -v p="$port" \
+          '$0==b{s=1} s && $1=="Port"{print "    Port " p; next} {print} $0==e{s=0}' "$conf" > "$conf.tmp"
+        cat "$conf.tmp" > "$conf"; rm -f "$conf.tmp"
+        echo MOVED
         """#
 
     /// Runs on the relay: `sh -s -- NAME`. Undoes setupScript; drops the Include once no bridges are left.

@@ -25,6 +25,8 @@ final class BridgeManager: ObservableObject {
     private let pathMonitor = NWPathMonitor()
     private var lastPath: String?
     private var pendingReconnect: DispatchWorkItem?
+    private var portFailures: [String: Int] = [:]
+    private var movingPort: Set<String> = []
 
     var healthy: Bool {
         let active = config.bridges.filter { !$0.paused }
@@ -154,27 +156,80 @@ final class BridgeManager: ObservableObject {
 
     private func makeTunnel(_ b: Bridge) -> Supervised {
         let forward = "127.0.0.1:\(b.remotePort):127.0.0.1:\(config.sshdPort)"
+        let sessionFile = Paths.relaySessionFile(b.name)
+        // The remote command reports the relay sshd session serving this tunnel (its pid and start
+        // time), then just waits for the connection to end.
+        let report = #"echo "\#(Self.sessionMarker)$PPID $(ps -o lstart= -p $PPID)"; exec cat >/dev/null"#
         return Supervised(
             name: "tunnel-\(b.name)", exe: SSH.path,
-            args: ["-v", "-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ConnectTimeout=15",
+            args: ["-v", "-T", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ConnectTimeout=15",
                    "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3",
-                   "-o", "ControlMaster=no", "-o", "ControlPath=none", "-R", forward, b.relay],
+                   "-o", "ControlMaster=no", "-o", "ControlPath=none", "-R", forward, b.relay, report],
             upMarker: "remote forward success", retryDelay: 10,
             before: {
-                // A tunnel that died while this Mac slept can leave the relay's sshd holding the port.
-                SSH.remote(b.relay, "command -v fuser >/dev/null 2>&1 && fuser -k -n tcp \(b.remotePort) >/dev/null 2>&1; true",
-                           timeout: 20)
+                // When a tunnel's connection dies without a clean disconnect (sleep, network change),
+                // the relay's sshd can keep that session, and the forwarded port, for hours.
+                guard let record = try? String(contentsOf: sessionFile, encoding: .utf8) else { return }
+                try? FileManager.default.removeItem(at: sessionFile)
+                Self.killRelaySession(relay: b.relay, record: record, log: Log(Paths.log("tunnel-\(b.name)")))
+            },
+            onStdout: { line in
+                guard line.hasPrefix(Self.sessionMarker) else { return }
+                try? String(line.dropFirst(Self.sessionMarker.count)).write(to: sessionFile, atomically: true, encoding: .utf8)
             }
         ) { [weak self] state in
             DispatchQueue.main.async {
                 guard let self, self.runners[b.name]?.bridge == b else { return }
                 switch state {
                 case .starting: self.tunnels[b.name] = .connecting
-                case .up: self.tunnels[b.name] = .up
-                case .down(let why): self.tunnels[b.name] = .down(why)
+                case .up:
+                    self.tunnels[b.name] = .up
+                    self.portFailures[b.name] = 0
+                case .down(let why):
+                    self.tunnels[b.name] = .down(why)
+                    if why.contains("remote port forwarding failed") { self.portInUse(b) }
                 case .stopped: break
                 }
                 self.publish()
+            }
+        }
+    }
+
+    private static let sessionMarker = "BRIDGECTL_SESSION="
+
+    /// Kills the relay sshd session in `record` ("PID START"), if it's still that same process.
+    private static func killRelaySession(relay: String, record: String, log: Log) {
+        let parts = record.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ", maxSplits: 1)
+        guard parts.count == 2, let pid = Int(parts[0]) else { return }
+        let start = parts[1].trimmingCharacters(in: .whitespaces)
+        let script = """
+            p=\(pid); s=\(Shell.quote(start))
+            if [ "$(ps -o lstart= -p $p 2>/dev/null | sed 's/^ *//;s/ *$//')" = "$s" ]; then
+              kill $p; sleep 1; kill -0 $p 2>/dev/null && kill -9 $p; echo KILLED
+            fi
+            true
+            """
+        let r = SSH.remote(relay, script, timeout: 20)
+        if r.stdout.contains("KILLED") { log.write("closed the previous tunnel's leftover session on \(relay) (pid \(pid))") }
+    }
+
+    /// The bridge's port on the relay is taken, usually by a dead session we couldn't identify.
+    /// After a few tries, move the bridge to a fresh port instead of waiting hours for it to clear.
+    private func portInUse(_ b: Bridge) {
+        portFailures[b.name, default: 0] += 1
+        guard portFailures[b.name, default: 0] >= 3, !movingPort.contains(b.name) else { return }
+        movingPort.insert(b.name)
+        let log = Log(Paths.log("tunnel-\(b.name)"))
+        DispatchQueue.global().async {
+            let result = Result { try Provisioner.movePort(b.name) }
+            DispatchQueue.main.async {
+                self.movingPort.remove(b.name)
+                self.portFailures[b.name] = 0
+                switch result {
+                case .success(let port): log.write("port \(b.remotePort) on \(b.relay) stays taken; moved the bridge to port \(port)")
+                case .failure(let error): log.write("couldn't move to a new port: \(error.localizedDescription)")
+                }
+                self.reload()
             }
         }
     }

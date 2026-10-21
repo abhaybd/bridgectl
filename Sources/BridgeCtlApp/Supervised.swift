@@ -12,6 +12,7 @@ final class Supervised {
     private let upMarker: String
     private let retryDelay: TimeInterval
     private let before: () -> Void
+    private let onStdout: ((String) -> Void)?
     private let onState: (State) -> Void
     private let log: Log
 
@@ -22,10 +23,13 @@ final class Supervised {
     private let wake = DispatchSemaphore(value: 0)
 
     /// `before` runs ahead of every (re)start, e.g. to clean up after a previous instance.
+    /// With `onStdout`, the child's stdout lines go there (and to the log), and its stdin is a pipe
+    /// that stays open until it exits, so a remote command reading it lives as long as the connection.
     init(name: String, exe: String, args: [String], upMarker: String, retryDelay: TimeInterval,
-         before: @escaping () -> Void = {}, onState: @escaping (State) -> Void) {
+         before: @escaping () -> Void = {}, onStdout: ((String) -> Void)? = nil,
+         onState: @escaping (State) -> Void) {
         self.name = name; self.exe = exe; self.args = args; self.upMarker = upMarker
-        self.retryDelay = retryDelay; self.before = before; self.onState = onState
+        self.retryDelay = retryDelay; self.before = before; self.onStdout = onStdout; self.onState = onState
         log = Log(Paths.log(name))
     }
 
@@ -58,8 +62,16 @@ final class Supervised {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: exe)
             p.arguments = args
-            p.standardInput = FileHandle.nullDevice
-            p.standardOutput = log.handle
+            let stdin = Pipe(), stdout = Pipe()
+            p.standardInput = onStdout == nil ? FileHandle.nullDevice : stdin
+            p.standardOutput = onStdout == nil ? log.handle : stdout
+            if let onStdout {
+                let out = LineSplitter { [weak self] line in self?.log.write(line); onStdout(line) }
+                stdout.fileHandleForReading.readabilityHandler = { h in
+                    let data = h.availableData
+                    if data.isEmpty { h.readabilityHandler = nil } else { out.feed(data) }
+                }
+            }
             let stderr = Pipe()
             p.standardError = stderr
             let lines = LineSplitter { [weak self] in self?.handle(line: $0) }
@@ -75,6 +87,7 @@ final class Supervised {
                 locked { process = p }
                 try? "\(p.processIdentifier)\n\(signature)\n".write(to: Paths.pidFile(name), atomically: true, encoding: .utf8)
                 exited.wait()
+                try? stdin.fileHandleForWriting.close()
                 status = p.terminationStatus
                 locked { process = nil }
                 try? FileManager.default.removeItem(at: Paths.pidFile(name))

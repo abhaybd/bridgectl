@@ -27,8 +27,10 @@ ssh cluster ──► 127.0.0.1:PORT ═══reverse tunnel═══► private
   (Duo Push) is pre-filled, so it's Enter plus approving on your phone. If you click
   **Not Now**, it asks again in 20 minutes (or use **Log In Now**).
 - **Sleep and network changes.** On wake or a network change, tunnels reconnect at once instead of
-  waiting for ssh to notice the old connection died. A tunnel's stale port on the relay is freed
-  before reconnecting.
+  waiting for ssh to notice the old connection died. A connection that died without a clean
+  disconnect can leave the relay's sshd holding the tunnel's port for hours, so each tunnel records
+  its sshd session on the relay and closes it before reconnecting. If the port still stays taken,
+  the bridge moves to a fresh port (clients pick up the change immediately).
 
 While the Mac is asleep or offline, bridges are down; clients get a clear error and work again
 once it's back (after a Duo approval if the login didn't survive).

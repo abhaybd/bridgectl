@@ -73,7 +73,7 @@ public enum AppLock {
     public static func acquire() -> Bool {
         Paths.ensure()
         // O_CLOEXEC: children (notably daemonized ssh masters) must not inherit and hold the lock.
-        fd = open(Paths.appLock.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        if fd < 0 { fd = open(Paths.appLock.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600) }
         return fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0
     }
 

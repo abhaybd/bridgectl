@@ -28,6 +28,8 @@ public enum Paths {
 
     public static func log(_ name: String) -> URL { logs.appendingPathComponent("\(name).log") }
     public static func pidFile(_ name: String) -> URL { run.appendingPathComponent("\(name).pid") }
+    /// Pid of a bridge's sshd session on the relay (the process holding its forwarded port).
+    public static func relaySessionFile(_ bridge: String) -> URL { run.appendingPathComponent("\(bridge).relay-session") }
 
     /// Creates the directory layout, private to this user (sshd's StrictModes requires that).
     public static func ensure() {

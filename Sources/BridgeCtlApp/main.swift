@@ -7,8 +7,15 @@ signal(SIGPIPE, SIG_IGN)
 // ssh runs this same executable as its SSH_ASKPASS to show login prompts.
 if Askpass.isRequested { Askpass.run() }
 
-// Exit 0 so launchd (KeepAlive on unsuccessful exit) doesn't keep relaunching a duplicate.
-guard AppLock.acquire() else { exit(0) }
+// A previous instance may still be shutting down (quit and reopen); give it a few seconds.
+// If another instance really is running, exit 0 so launchd (KeepAlive on unsuccessful exit)
+// doesn't keep relaunching a duplicate.
+var locked = AppLock.acquire()
+for _ in 0..<25 where !locked {
+    usleep(200_000)
+    locked = AppLock.acquire()
+}
+guard locked else { exit(0) }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var termSource: DispatchSourceSignal?
